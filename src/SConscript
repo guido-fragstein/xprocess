@@ -1,0 +1,7 @@
+
+Import('stdenv')
+
+stdenv.Program('bserv', Glob('*.cpp'))
+stdenv.SConscript('test/SConscript')
+
+

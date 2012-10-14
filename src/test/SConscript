@@ -1,0 +1,27 @@
+
+import os.path
+
+Import('stdenv')
+
+testenv = stdenv.Clone()
+testenv.Append(LIBS = ['boost_unit_test_framework'])
+object_files = []
+
+for pfl in Glob('../*.cpp'):
+    file_name = os.path.basename(pfl.path)
+    if file_name == 'main.cpp':
+        continue
+    object_files.append(testenv.Object('build_test_' + file_name.replace('.cpp', ''), pfl))
+
+
+for fl in Glob('*.cpp'):
+    file_name = os.path.basename(fl.path)
+
+    if 'test_' in file_name:
+        object_files.append(testenv.Object(fl))
+
+object_files.append(testenv.Object('runner.cpp'))
+
+prg = testenv.Program('testrunner', object_files)
+Execute(prg)
+
