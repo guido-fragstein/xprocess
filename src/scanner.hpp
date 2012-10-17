@@ -16,9 +16,22 @@
 
 //boost
 #include <boost/shared_ptr.hpp>
+#include <boost/tuple/tuple.hpp>
+#include <boost/unordered_map.hpp>
 
 namespace parsers
 {
+
+//TODO: adding validators to rules.
+
+class result_handler
+{
+    public:
+        virtual void parsed_successful( bool success ) = 0;
+        virtual void set_name( const std::string &name ) = 0;
+        virtual void field_parsed( const std::string &name, const std::string &value ) = 0;
+        virtual ~result_handler(){};
+};
 
 class rule_impl;
 class parser_rule
@@ -35,9 +48,10 @@ class parser_rule
         parser_rule( const std::string &ident, 
                 const std::string &startdel, const std::string &enddel );
 
-        std::string result() const;
+        parser_rule(); //invalid empty rule. Needed vor conformance with std::vector
+
         std::string name() const;
-        bool parse( const std::string &input ) const;
+        bool parse( const std::string &input, result_handler *rs ) const;
 };
 
 
@@ -47,19 +61,14 @@ class generic_factory
     typedef std::vector<ItemType> item_list_type;
 
     std::string identity_;
-    item_list_type items_;
+    item_list_type list_items_;
 
     public:
     
-    generic_factory():
-        item_list_type()
-    {
-
-    };
-
-    item_list_type& items(){ return items_; }
-    void identity( const std::string &id ){ identity_ = id; }
-    std::string identity() { return identity_; }
+    item_list_type& items() { return list_items_; }
+    void items( const item_list_type &it ) { list_items_ = it; }
+    void identity( const std::string &id ) { identity_ = id; }
+    std::string identity() const { return identity_; }
 
 };
 
@@ -78,10 +87,10 @@ class message_parser
     class impl;
     boost::shared_ptr<impl> pimpl_;
     public:
-        message_parser( const message_parser_factory &fc );
+        message_parser( message_parser_factory &fc );
         
         //return true only if all rules applied successfull
-        bool parse( const std::string &input ) const; 
+        bool parse( const std::string &input, result_handler *rs ) const; 
 
 };
 
@@ -97,11 +106,13 @@ typedef generic_factory<message_parser> scanner_factory;
 
 class scanner
 {
+    class impl;
+    boost::shared_ptr<impl> pimpl_;
     public:
-        scanner( const scanner_factory &f );
+        scanner( scanner_factory &f );
 
         //return true if exactly one parser was successfull
-        bool parse( const std::string &input ) const;
+        bool parse( const std::string &input, result_handler *rs ) const;
 };
 
 } //namespace parsers
