@@ -1,3 +1,5 @@
 debug/
 *.dblite
+src/.*
+src/test/.*
 

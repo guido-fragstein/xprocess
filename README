@@ -1,0 +1,5 @@
+This is an serial and TCP/IP line interface chat service.
+It can be used to set up a serial protocol to a remote service, that
+exchange stx/etx delimited messages without programming any C code.
+Instead xml is used to describe the message format.
+
