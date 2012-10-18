@@ -29,7 +29,7 @@ class result_handler
     public:
         virtual void parsed_successful( bool success ) = 0;
         virtual void set_name( const std::string &name ) = 0;
-        virtual void field_parsed( const std::string &name, const std::string &value ) = 0;
+        virtual bool field_parsed( const std::string &name, const std::string &value ) = 0;
         virtual ~result_handler(){};
 };
 

@@ -54,12 +54,12 @@ struct offset_rule : public rule_impl
             or (input.size() < (pos_ + length_));
         
         if(too_short)
-            return false;//false_value(identity_);
+            return false;
 
         auto rpos = input.begin() + pos_;
         auto epos = input.begin() + (pos_ + length_);
-        rs->field_parsed(identity_, std::string(rpos, epos));
-        return true; //true_value(identity_, std::string(rpos, epos));
+        return rs->field_parsed(identity_, std::string(rpos, epos));
+        //return true; 
     }
 };
 
@@ -87,8 +87,8 @@ struct finder_rule : public rule_impl
             return false; //false_value(identity_);
         
         
-        rs->field_parsed(identity_, std::string(start_read_itr, input.begin() + end_pos));
-        return true;//true_value(identity_, std::string(start_read_itr, input.begin() + end_pos));
+        return rs->field_parsed(identity_, std::string(start_read_itr, input.begin() + end_pos));
+        //return true;
     }
 };
 

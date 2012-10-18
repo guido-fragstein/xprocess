@@ -22,9 +22,10 @@ struct test_result_handler : public parsers::result_handler
         name_ = name;
     }
 
-    virtual void field_parsed( const std::string &name, const std::string &value )
+    virtual bool field_parsed( const std::string &name, const std::string &value )
     {
         items_.insert(std::make_pair(name,  value));
+        return true;
     } 
 };
 
