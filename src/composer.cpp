@@ -1,18 +1,22 @@
 
 #include "composer.hpp"
+#include "common.hpp"
 #include <boost/unordered_map.hpp>
+#include <boost/functional/factory.hpp>
 #include <boost/format.hpp>
 #include <boost/function.hpp>
 #include <boost/make_shared.hpp>
+#include <boost/date_time.hpp>
 #include <vector>
 #include <sstream>
+#include <iostream> //debug
 
 namespace composer
 {
 
 struct fragment
 {
-    virtual std::string value( const input *ip ) const = 0;
+    virtual void value( const input *ip, std::string *value ) const = 0;
     virtual ~fragment(){};
     
     typedef boost::shared_ptr<fragment> pointer;
@@ -30,9 +34,9 @@ struct literal : public fragment
     {
     }
 
-    virtual std::string value( const input* ) const
+    virtual void value( const input*, std::string *value ) const
     {
-        return value_;
+        (*value) += value_;
     }
 
 };
@@ -51,11 +55,114 @@ struct field : public fragment
     
     }
 
-    virtual std::string value( const input *ip ) const
+    virtual void value( const input *ip, std::string *value ) const
     {
-        return boost::str( boost::format(format_) % (*ip)[key_name_] );
+        (*value) += boost::str( boost::format(format_) % (*ip)[key_name_] );
     }
 };
+
+namespace functions
+{
+
+    struct function_base
+    {
+        function_base( const common::string_list &list ){}
+        virtual void operator()( std::string *str ) = 0;
+        virtual ~function_base(){}
+        
+    };
+
+    struct checksum : public function_base
+    {
+        bool int_output_;
+        std::string format_;
+        checksum( const common::string_list &list ):
+            function_base(list)
+        {
+            if(list.size() < 1)
+                throw std::string("arity error: in checksum function are at least 1 parameter expected");
+
+            format_ = list[0];
+            int_output_ = list[1] != "false";
+        }
+
+        virtual void operator()( std::string *rs )
+        {
+            auto itr = rs->begin();
+            auto nd = rs->end();
+
+            if(*itr == (char)2) ++itr;
+            std::size_t int_res;
+            char char_res;
+
+            if( int_output_ )
+            {
+                for(; itr != nd; ++itr) int_res ^= *itr;
+                *rs += boost::str(boost::format(format_) % int_res);
+            }
+
+            for(; itr != nd; ++itr) char_res ^= *itr;
+                *rs += char_res;
+
+        }
+    };
+
+    struct now : public function_base
+    {
+        std::stringstream ss_;
+        now( const common::string_list &list ):
+            function_base(list)
+        {
+
+            if(list.size() < 1 )
+                throw std::string("arity error: now function needs at least one argument");
+
+            namespace tm = boost::posix_time;
+            auto facet = new tm::time_facet(list[0].c_str());
+            std::stringstream ss_;
+            ss_.imbue(std::locale(std::locale::classic(), facet));
+            
+        }
+
+        virtual void operator()( std::string *rs )
+        {
+            namespace tm = boost::posix_time;
+            ss_.str(std::string());
+            ss_ << tm::second_clock::local_time();
+            *rs += ss_.str();
+        }
+    };
+
+    struct repeat : public function_base
+    {
+        std::size_t nr_repeats_;
+        char char_;
+        repeat( const common::string_list &list ):
+            function_base(list)
+        {
+            if(list.size() < 2)
+                throw std::string("arity error: repeat function needs two argument");
+
+            std::stringstream ss(list[0]);
+            std::size_t ascii_code;
+            if( ss >> ascii_code )
+                char_ = (char)(ascii_code);
+            else
+                char_ = list[0][0];
+
+            ss.str(list[1]);
+            if(!(ss >> nr_repeats_))
+                throw std::string("argument error: function repeat needs a numeric argument at 2nd position");            
+        }
+
+        virtual void operator()( std::string *rs )
+        {
+            for( auto i = 0; i < nr_repeats_; ++i )
+                *rs += char_;
+        }
+    };
+
+}
 
 //return a value calculated by a build in function like i.e. now or repeat
 //the input parameter is ignored
@@ -63,22 +170,45 @@ struct field : public fragment
 
 struct functional : public fragment
 {
-    std::string function_name_;
-    std::vector<std::string> params_;
+    typedef boost::function <  functions::function_base*( const common::string_list &list ) > factory_type;        
+    typedef boost::unordered_map< std::string, factory_type > functions_map_type;
+   
+    static functions_map_type functions_map_;
 
-    functional(const std::string &n, const std::vector<std::string> &p):
+    static bool init_map()
+    {
+        functions_map_ = { 
+            {"repeat", boost::factory<functions::repeat*>()}, 
+            {"now", boost::factory<functions::now*>()},
+            {"checksum", boost::factory<functions::checksum*>()} 
+        }; 
+
+        return true;
+    }
+
+    std::string function_name_;
+    common::string_list params_;
+    boost::shared_ptr<functions::function_base> function_;
+
+    functional(const std::string &n, const common::string_list &p):
         function_name_(n),
         params_(p)
     {
-    
+        auto itr = functions_map_.find(function_name_);
+        if(itr == functions_map_.end())
+            throw std::string("no such function: ") + function_name_; 
+        function_.reset( itr->second(params_) );
     }
 
-    virtual std::string value( const input* ) const
+    virtual void value( const input*, std::string *value ) const    
     {
-        return "dolly buster";
+        (*function_)(value);
     }
 
 };
+
+functional::functions_map_type functional::functions_map_;// = functional::functions_map_type();
+static bool initialized = functional::init_map();
 
 struct message::impl
 {
@@ -94,8 +224,8 @@ struct message::impl
 struct fragment_buffer
 {
     std::vector<fragment::pointer>& vec;
-    std::vector<std::string> param;
-    std::string format, buffer;
+    common::string_list param_vec;
+    std::string format, buffer, param;
 
     fragment_buffer( std::vector<fragment::pointer> &p ):
         vec(p)
@@ -108,6 +238,12 @@ struct fragment_buffer
         buffer += c;
     }
 
+    void shift_param()
+    {
+        param_vec.push_back(param);
+        param.clear();
+    }
+
     void shift_literal()
     {
         vec.push_back( boost::make_shared<literal>(buffer) );
@@ -116,7 +252,7 @@ struct fragment_buffer
 
     void shift_function()
     {
-        vec.push_back( boost::make_shared<functional>(buffer, param));
+        vec.push_back( boost::make_shared<functional>(buffer, param_vec));
         param.clear();
         buffer.clear();
     }
@@ -139,6 +275,7 @@ void message::impl::parse(message::impl &imp, const std::string &format )
     auto nd = format.end();
     states state = sstart;
     fragment_buffer buffer(imp.fragment_vector_);
+    
 
     for(; itr != nd; ++itr )
     {
@@ -209,6 +346,7 @@ void message::impl::parse(message::impl &imp, const std::string &format )
                 switch(*itr)
                 {
                     case '(': //open bracet after a name means function call
+                        std::cout << "function" << std::endl;
                         state = sparam_list;
                         break;
                     default:
@@ -220,14 +358,14 @@ void message::impl::parse(message::impl &imp, const std::string &format )
                 switch(*itr)
                 {
                     case ',':
-                        buffer.param.push_back("");
+                        buffer.shift_param();
                         break;
                     case ')':
                         buffer.shift_function();
                         state = sstart;
                         break;
                     default:
-                        buffer.param.back() += *itr;
+                        buffer.param += *itr;
                         break;
                 }
                 break;
@@ -269,13 +407,15 @@ message::message( const std::string &name, const std::string &format ):
 
 std::string message::format( const input *inp )
 {
-    std::stringstream ss;
+    //std::stringstream ss;
+    std::string result;
     for( auto &val : pimpl_->fragment_vector_)
     {
-        ss << val->value(inp);
+        val->value(inp, &result);
+        //ss << val->value(inp);
     }
 
-    return ss.str();
+    return result;
 }
 
 }
