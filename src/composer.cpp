@@ -221,11 +221,15 @@ struct message::impl
 //\$START: $(id:%2.2d)\\ $now(%H%M%Y)01$(charge:%04.4d) \
 // $(create)$repeat( ,12)$checksum(%2.2X,int)
 
+//fragment buffer is used to add items to the object tree, built by the
+//parser algorithm
+//--------------------------------------------------------------------------------
+
 struct fragment_buffer
 {
     std::vector<fragment::pointer>& vec;
     common::string_list param_vec;
-    std::string format, buffer, param;
+    std::string format, buffer, param, ascii_code;
 
     fragment_buffer( std::vector<fragment::pointer> &p ):
         vec(p)
@@ -264,12 +268,25 @@ struct fragment_buffer
         format.clear();
     }
     
+    void apply_ascii_code()
+    {
+        std::stringstream ss(ascii_code);
+        std::size_t ascii;
+        if((ss >> ascii) && (ascii < 127) )
+        {            
+            buffer += (char)ascii;
+            ascii_code.clear();
+            return;
+        }
+
+        throw std::string("illegal asci char code ") + ascii_code;
+    }
 };
 
 void message::impl::parse(message::impl &imp, const std::string &format )
 {
     enum states{ sstart, sliteral, sesc, scommand, 
-        sfield, sfield_format, sparam_list, sfunction };
+        sfield, sfield_format, sparam_list, sfunction, ascii_code };
 
     auto itr = format.begin();
     auto nd = format.end();
@@ -287,12 +304,26 @@ void message::impl::parse(message::impl &imp, const std::string &format )
                     case '\\':
                         state = sesc;
                         break;
+                    case '#':
+                        state = ascii_code;
                     case '$':
                         state = scommand;
                         break;
                     default:
                         state = sliteral;
                         buffer += *itr;
+                        break;
+                }
+                break;
+            case ascii_code:
+                switch(*itr)
+                {
+                    case ';':
+                        buffer.apply_ascii_code();
+                        state = sstart;
+                        break;
+                    default:
+                        buffer.ascii_code += *itr;
                         break;
                 }
                 break;
@@ -304,6 +335,7 @@ void message::impl::parse(message::impl &imp, const std::string &format )
                         break;
                     case '$':
                     case '\\':
+                    case '#':
                         buffer += *itr;
                         state = sliteral;
                         break;

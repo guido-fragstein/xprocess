@@ -36,6 +36,13 @@ struct dummy_input : public composer::input
 BOOST_AUTO_TEST_CASE( compose_this_man )
 {
 
+    {
+        auto cp = composer::message("test1record", "#2;test#10;#13;test\\#10;");
+        dummy_input ipt("test1record");
+        auto rs = cp.format(&ipt);
+        BOOST_CHECK_EQUAL("\x02test\x0A\x0Dtest\\#10;", rs);
+    }
+
     dummy_input ipt("testrecord");
     ipt.map_["feld1"] = "103";
     ipt.map_["name"] = "max brause";
@@ -43,7 +50,7 @@ BOOST_AUTO_TEST_CASE( compose_this_man )
 
     auto cp = composer::message("testrecord", 
             "\\$START $(feld1:%3.3d) $(name:%s)");
-    
+
     auto result = cp.format(&ipt);
     BOOST_CHECK_EQUAL("$START 103 max brause", result);
 }
